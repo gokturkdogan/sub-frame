@@ -1,0 +1,43 @@
+export const TARGET_LANGUAGES: { code: string; label: string }[] = [
+  { code: "en", label: "İngilizce" },
+  { code: "ru", label: "Rusça" },
+  { code: "es", label: "İspanyolca" },
+  { code: "de", label: "Almanca" },
+  { code: "fr", label: "Fransızca" },
+  { code: "it", label: "İtalyanca" },
+  { code: "pt", label: "Portekizce" },
+  { code: "ar", label: "Arapça" },
+  { code: "zh-CN", label: "Çince (Basitleştirilmiş)" },
+  { code: "ja", label: "Japonca" },
+  { code: "ko", label: "Korece" },
+  { code: "nl", label: "Flemenkçe" },
+  { code: "pl", label: "Lehçe" },
+  { code: "uk", label: "Ukraynaca" },
+  { code: "hi", label: "Hintçe" },
+];
+
+/**
+ * ISO 639-2/T three-letter tag for MP4 subtitle metadata (`-metadata:s:s:0 language=`).
+ */
+export function subtitleLanguageTag(iso639_1: string): string {
+  const base = iso639_1.split("-")[0] ?? iso639_1;
+  const map: Record<string, string> = {
+    en: "eng",
+    ru: "rus",
+    es: "spa",
+    de: "deu",
+    fr: "fra",
+    it: "ita",
+    pt: "por",
+    ar: "ara",
+    zh: "zho",
+    ja: "jpn",
+    ko: "kor",
+    tr: "tur",
+    nl: "nld",
+    pl: "pol",
+    uk: "ukr",
+    hi: "hin",
+  };
+  return map[base] ?? "und";
+}

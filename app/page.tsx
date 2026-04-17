@@ -1,64 +1,165 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import * as React from "react";
+
+import { ModeToggle } from "@/components/mode-toggle";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { TARGET_LANGUAGES } from "@/lib/lang";
+import { Film, Upload } from "lucide-react";
+
+export default function HomePage() {
+  const router = useRouter();
+  const [file, setFile] = React.useState<File | null>(null);
+  const [targetLang, setTargetLang] = React.useState("en");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const onPick = (f: File | null) => {
+    setError(null);
+    setFile(f);
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setError("Lütfen bir video dosyası seçin.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      body.set("targetLang", targetLang);
+      const res = await fetch("/api/process", { method: "POST", body });
+      const data = (await res.json()) as { jobId?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || "İstek başarısız");
+      }
+      if (!data.jobId) throw new Error("İş kimliği alınamadı");
+      router.push(`/result?job=${encodeURIComponent(data.jobId)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bir hata oluştu");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex min-h-screen flex-col">
+      <header className="border-b border-border/60 bg-background/80 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
+          <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+            <Film className="size-5" />
+            SubFrame
+          </Link>
+          <ModeToggle />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      </header>
+
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 py-10">
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl">Video altyazı</CardTitle>
+            <CardDescription>
+              Videonuzu yükleyin. Konuşmayı Türkçe olarak yazıya döker, altyazıları seçtiğiniz
+              dile çevirir ve indirebileceğiniz bir MP4 oluştururuz. İşlem bittikten sonra
+              sunucuda veri tutulmaz.
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={onSubmit}>
+            <CardContent className="flex flex-col gap-6">
+              <div className="space-y-2">
+                <Label>Video dosyası</Label>
+                <button
+                  type="button"
+                  onDragOver={(ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                  }}
+                  onDrop={(ev) => {
+                    ev.preventDefault();
+                    const f = ev.dataTransfer.files?.[0];
+                    if (f) onPick(f);
+                  }}
+                  onClick={() => inputRef.current?.click()}
+                  className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-sm text-muted-foreground transition hover:border-primary/40 hover:bg-muted/50"
+                >
+                  <Upload className="size-8 opacity-70" />
+                  <span>
+                    {file ? (
+                      <span className="font-medium text-foreground">{file.name}</span>
+                    ) : (
+                      <>Videoyu buraya sürükleyin veya seçmek için tıklayın</>
+                    )}
+                  </span>
+                  <span className="text-xs">MP4, MOV, MKV ve yaygın video biçimleri</span>
+                </button>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={(ev) => onPick(ev.target.files?.[0] ?? null)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="lang">Altyazı dili</Label>
+                <Select
+                  value={targetLang}
+                  onValueChange={(v) => {
+                    if (v) setTargetLang(v);
+                  }}
+                >
+                  <SelectTrigger id="lang" className="w-full max-w-md">
+                    <SelectValue placeholder="Dil seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TARGET_LANGUAGES.map((l) => (
+                      <SelectItem key={l.code} value={l.code}>
+                        {l.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Önce ses Türkçe olarak yazıya dökülür, ardından bu dile düz çeviri yapılır.
+                </p>
+              </div>
+
+              {error ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              ) : null}
+            </CardContent>
+            <CardFooter className="flex flex-col items-stretch gap-3 sm:flex-row sm:justify-end">
+              <Button type="submit" disabled={busy} size="lg" className="w-full sm:w-auto">
+                {busy ? "Başlatılıyor…" : "Videoyu işle"}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
       </main>
     </div>
   );
