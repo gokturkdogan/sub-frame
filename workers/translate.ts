@@ -6,14 +6,24 @@ import { appendJobLog } from "@/lib/job-store";
 import type { SrtCue } from "@/lib/srt";
 import { parseSrt, serializeSrt } from "@/lib/srt";
 
-/** İstekler arası bekleme (ms). Çok düşük = Google rate limit / red. */
-const DELAY_BETWEEN_MS =
-  Number(process.env.TRANSLATE_DELAY_MS) >= 0
-    ? Number(process.env.TRANSLATE_DELAY_MS)
-    : 450;
+function envNumber(key: string, fallback: number): number {
+  const v = process.env[key];
+  if (v === undefined || v === "") return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 
-const MAX_ATTEMPTS = Number(process.env.TRANSLATE_MAX_RETRIES) || 6;
-const INITIAL_BACKOFF_MS = 900;
+/**
+ * İstekler arası bekleme (ms). Google anonim uç noktası 300–500ms’te sık sık red verir;
+ * varsayılan 1100ms + jitter.
+ */
+const DELAY_BETWEEN_MS = envNumber("TRANSLATE_DELAY_MS", 1100);
+
+const MAX_ATTEMPTS = envNumber("TRANSLATE_MAX_RETRIES", 8);
+const INITIAL_BACKOFF_MS = envNumber("TRANSLATE_BACKOFF_INITIAL_MS", 1200);
+
+/** Her istekten sonra eklenen rastgele gecikme üst sınırı (ms), eşzamanlılık / limiti yumuşatır. */
+const JITTER_MAX_MS = envNumber("TRANSLATE_JITTER_MAX_MS", 500);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -75,7 +85,7 @@ async function translateText(
   }
 
   throw new Error(
-    "Google çeviri art arda reddetti. TRANSLATE_DELAY_MS artırın, bir süre sonra tekrar deneyin veya LIBRETRANSLATE_URL kullanın."
+    "Google çeviri (anahtarsız) istekleri reddetti. .env: TRANSLATE_DELAY_MS=1500 veya 2000 yapın, 10–15 dk sonra tekrar deneyin. Kalıcı çözüm: kendi sunucunuzda LIBRETRANSLATE_URL veya GOOGLE_TRANSLATE_TLD=com.tr deneyin."
   );
 }
 
@@ -113,7 +123,9 @@ export async function translateSrtFile(
     }
 
     if (i + 1 < cues.length && DELAY_BETWEEN_MS > 0) {
-      await sleep(DELAY_BETWEEN_MS);
+      const jitter =
+        JITTER_MAX_MS > 0 ? Math.floor(Math.random() * (JITTER_MAX_MS + 1)) : 0;
+      await sleep(DELAY_BETWEEN_MS + jitter);
     }
   }
 
