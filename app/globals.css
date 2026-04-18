@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-heading: var(--font-sans-ui), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -117,6 +117,184 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@keyframes ai-float {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  25% {
+    transform: translate(10px, -18px) rotate(6deg) scale(1.03);
+  }
+  50% {
+    transform: translate(-12px, 10px) rotate(-5deg) scale(0.97);
+  }
+  75% {
+    transform: translate(8px, 14px) rotate(4deg) scale(1.02);
+  }
+}
+
+@keyframes hero-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes gradient-flow {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes border-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Yavaş hareket eden arka plan blob’ları */
+@keyframes blob-drift-1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(6%, -8%) scale(1.06);
+  }
+  66% {
+    transform: translate(-5%, 6%) scale(0.96);
+  }
+}
+
+@keyframes blob-drift-2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  40% {
+    transform: translate(-8%, 5%) scale(1.08) rotate(3deg);
+  }
+  70% {
+    transform: translate(4%, -6%) scale(0.94) rotate(-2deg);
+  }
+}
+
+@keyframes blob-drift-3 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(5%, 10%) scale(1.12);
+    opacity: 0.85;
+  }
+}
+
+@keyframes mesh-hue {
+  0%,
+  100% {
+    opacity: 0.35;
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    opacity: 0.55;
+    filter: hue-rotate(25deg);
+  }
+}
+
+@keyframes grid-drift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 48px 48px;
+  }
+}
+
+@keyframes decor-line-shift {
+  0%,
+  100% {
+    transform: translateX(0) scaleX(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateX(2%) scaleX(1.02);
+    opacity: 0.55;
+  }
+}
+
+@keyframes dots-breathe {
+  0%,
+  100% {
+    opacity: 0.06;
+  }
+  50% {
+    opacity: 0.13;
+  }
+}
+
+.dark .animate-dots-breathe {
+  animation: dots-breathe-dark 9s ease-in-out infinite;
+}
+
+@keyframes dots-breathe-dark {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.18;
+  }
+}
+
+@layer utilities {
+  .animate-hero-glow {
+    animation: hero-glow-pulse 5s ease-in-out infinite;
+  }
+  .animate-gradient-flow {
+    background-size: 200% auto;
+    animation: gradient-flow 7s ease infinite;
+  }
+  .animate-border-glow {
+    animation: border-glow 3s ease-in-out infinite;
+  }
+  .animate-blob-1 {
+    animation: blob-drift-1 28s ease-in-out infinite;
+  }
+  .animate-blob-2 {
+    animation: blob-drift-2 38s ease-in-out infinite;
+  }
+  .animate-blob-3 {
+    animation: blob-drift-3 22s ease-in-out infinite;
+  }
+  .animate-mesh-hue {
+    animation: mesh-hue 18s ease-in-out infinite;
+  }
+  .animate-grid-drift {
+    animation: grid-drift 32s linear infinite;
+  }
+  .animate-decor-line {
+    animation: decor-line-shift 14s ease-in-out infinite;
+  }
+  .animate-dots-breathe {
+    animation: dots-breathe 9s ease-in-out infinite;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -126,5 +304,8 @@
   }
   html {
     @apply font-sans;
+  }
+  a[href]:not([aria-disabled="true"]) {
+    @apply cursor-pointer;
   }
 }

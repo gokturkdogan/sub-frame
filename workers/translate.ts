@@ -2,7 +2,14 @@ import fs from "fs/promises";
 
 import { translate } from "google-translate-api-x";
 
-import { appendJobLog } from "@/lib/job-store";
+import {
+  logBullet,
+  logNote,
+  logOk,
+  logSection,
+  logWarn,
+} from "@/lib/friendly-job-log";
+import { updateJob } from "@/lib/job-store";
 import type { SrtCue } from "@/lib/srt";
 import { parseSrt, serializeSrt } from "@/lib/srt";
 
@@ -67,15 +74,15 @@ async function translateText(
       });
       const out = result.text?.trim() ?? "";
       if (out.length > 0) return out;
-      appendJobLog(
+      logWarn(
         jobId,
-        `[çeviri] boş yanıt, tekrar (${attempt}/${MAX_ATTEMPTS})`
+        `Çeviri boş döndü; tekrar deneniyor (${attempt}/${MAX_ATTEMPTS}).`
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      appendJobLog(
+      logWarn(
         jobId,
-        `[çeviri] deneme ${attempt}/${MAX_ATTEMPTS}: ${msg.slice(0, 200)}`
+        `Çeviri isteği sorun çıkardı (${attempt}/${MAX_ATTEMPTS}): ${msg.slice(0, 200)}`
       );
     }
     if (attempt < MAX_ATTEMPTS) {
@@ -103,14 +110,20 @@ export async function translateSrtFile(
   const out: SrtCue[] = [];
 
   const engine = process.env.LIBRETRANSLATE_URL
-    ? `LibreTranslate (${process.env.LIBRETRANSLATE_URL})`
-    : `google-translate-api-x (tekil istek, aralık=${DELAY_BETWEEN_MS}ms)`;
-  appendJobLog(
+    ? `LibreTranslate — ${process.env.LIBRETRANSLATE_URL}`
+    : `Google çeviri (anahtarsız) — istekler arası yaklaşık ${DELAY_BETWEEN_MS} ms`;
+  logSection(jobId, "🌐", "4/5 — Metin çevirisi");
+  logBullet(jobId, `Toplam ${cues.length} alt yazı satırı çevrilecek.`);
+  logBullet(jobId, `Hedef dil kodu: ${targetLang}`);
+  logBullet(jobId, `Kullanılan servis: ${engine}`);
+  logNote(
     jobId,
-    `Çeviri başlıyor: ${cues.length} alt yazı, hedef=${targetLang}, motor=${engine}`
+    "Çok hızlı isteklerde servis geçici olarak reddedebilir; otomatik yeniden deneme vardır."
   );
 
-  const logEvery = Math.max(1, Math.min(200, Math.floor(cues.length / 15)));
+  const logEvery = Math.max(1, Math.min(200, Math.floor(cues.length / 8)));
+  const pctLo = 58;
+  const pctHi = 76;
 
   for (let i = 0; i < cues.length; i++) {
     const cue = cues[i];
@@ -118,8 +131,18 @@ export async function translateSrtFile(
     out.push({ ...cue, text });
 
     const done = i + 1;
+    const pct =
+      cues.length === 0
+        ? pctLo
+        : pctLo + Math.floor(((pctHi - pctLo) * done) / cues.length);
+    const clamped = Math.min(pctHi, pct);
+    updateJob(jobId, {
+      progress: clamped,
+      progressHint: `4/5 · ${done}/${cues.length} alt yazı çevrildi · genel ~%${clamped} (bu adımın içinde)`,
+    });
+
     if (done % logEvery === 0 || done === cues.length) {
-      appendJobLog(jobId, `Çeviri ilerleme: ${done}/${cues.length} alt yazı`);
+      logOk(jobId, `Çeviri ilerlemesi: ${done} / ${cues.length} satır`);
     }
 
     if (i + 1 < cues.length && DELAY_BETWEEN_MS > 0) {
@@ -131,5 +154,10 @@ export async function translateSrtFile(
 
   const normalized = out.map((c, idx) => ({ ...c, index: idx + 1 }));
   await fs.writeFile(outputPath, serializeSrt(normalized), "utf-8");
-  appendJobLog(jobId, `Çeviri bitti, dosya: ${outputPath}`);
+  updateJob(jobId, {
+    progress: 76,
+    progressHint: "4/5 · Çeviri bitti — sırada videoyla birleştirme",
+  });
+  logOk(jobId, "Çeviri tamamlandı; altyazı dosyası kaydedildi.");
+  logBullet(jobId, outputPath);
 }

@@ -3,7 +3,12 @@ import fs from "fs/promises";
 import { NextResponse } from "next/server";
 
 import { TARGET_LANGUAGES } from "@/lib/lang";
-import { appendJobLog, updateJob } from "@/lib/job-store";
+import {
+  normalizeWhisperModelInput,
+  serverDefaultWhisperModel,
+} from "@/lib/whisper-models";
+import { logBullet, logOk, logSection, logTech } from "@/lib/friendly-job-log";
+import { updateJob } from "@/lib/job-store";
 import { ensureJobDir, runPipeline } from "@/lib/pipeline";
 import { getJobPaths } from "@/lib/paths";
 
@@ -28,6 +33,10 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get("file");
     const targetLang = String(form.get("targetLang") || "").trim();
+    const whisperModel = normalizeWhisperModelInput(
+      String(form.get("whisperModel") || ""),
+      serverDefaultWhisperModel()
+    );
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Video dosyası eksik" }, { status: 400 });
@@ -49,21 +58,27 @@ export async function POST(request: Request) {
     await ensureJobDir(jobId);
     updateJob(jobId, {
       status: "processing",
-      progress: 6,
-      step: "Yükleme kaydediliyor",
+      progress: 5,
+      step: "Video kaydediliyor",
+      stepCode: "saving_video",
+      progressHint: "1/5 · Dosya sunucuya yazılıyor…",
+      whisperModel,
     });
 
     const paths = getJobPaths(jobId);
     const buf = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(paths.inputVideo, buf);
-    appendJobLog(
-      jobId,
-      `Yükleme kaydedildi: input.mp4 (${buf.byteLength} bayt), ad=${file.name}`
-    );
+    const mb = (buf.byteLength / (1024 * 1024)).toFixed(2);
+    logSection(jobId, "📥", "Video sunucuya kaydedildi");
+    logOk(jobId, `Dosya adı: ${file.name}`);
+    logBullet(jobId, `Boyut: ${mb} MB`);
+    logTech(jobId, `Kayıt yolu: input.mp4`);
 
     updateJob(jobId, {
-      progress: 14,
-      step: "İşlem başlatılıyor",
+      progress: 12,
+      step: "Video alındı",
+      stepCode: "video_ready",
+      progressHint: "Video hazır — birazdan ses ayıklanacak (genel ~%12)",
     });
 
     void runPipeline(jobId, targetLang);

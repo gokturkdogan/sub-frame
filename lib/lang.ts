@@ -1,7 +1,8 @@
-export const TARGET_LANGUAGES: { code: string; label: string }[] = [
-  { code: "tr", label: "Türkçe" },
-  { code: "en", label: "İngilizce" },
-  { code: "ru", label: "Rusça" },
+/** SVG bayraklar — emoji yerine tüm platformlarda tutarlı görünüm (public/flags/) */
+export const TARGET_LANGUAGES: { code: string; label: string; flagSrc: string }[] = [
+  { code: "tr", label: "Türkçe", flagSrc: "/flags/tr.svg" },
+  { code: "en", label: "İngilizce", flagSrc: "/flags/gb.svg" },
+  { code: "ru", label: "Rusça", flagSrc: "/flags/ru.svg" },
 ];
 
 /** Whisper zaten Türkçe SRT üretir; bu dilde çeviri adımı atlanır. */

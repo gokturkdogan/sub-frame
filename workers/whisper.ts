@@ -2,7 +2,17 @@ import { spawn, spawnSync } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 
-import { appendJobLog } from "@/lib/job-store";
+import {
+  logBullet,
+  logError,
+  logNote,
+  logOk,
+  logSection,
+  logTech,
+  logWait,
+  logWarn,
+} from "@/lib/friendly-job-log";
+import { getJob, updateJob } from "@/lib/job-store";
 import { formatShellCommand } from "@/lib/shell-cmd";
 import OpenAI, { toFile } from "openai";
 
@@ -36,16 +46,16 @@ function whisperPhaseFromLine(line: string): WhisperPhase | null {
   if (/detecting language/i.test(t)) {
     return {
       key: "lang_detect",
-      label: "Dil tespiti — Whisper ilk ~30 snye bakıyor",
+      label: "Dil kontrolü: sesin başına bakılıyor (yaklaşık ilk 30 sn)",
     };
   }
   if (/skipping .* due to/i.test(t)) {
-    return { key: "skip_err", label: "Dosya atlanıyor / istisna (stderr)" };
+    return { key: "skip_err", label: "Bir parça atlanıyor (uyarı / istisna)" };
   }
   if (/\b(huggingface|hf\.co|cdn-lfs)\b/i.test(t)) {
     return {
       key: "hf_fetch",
-      label: "Model dosyası ağdan çekiliyor (Hugging Face vb.)",
+      label: "Model dosyası internetten alınıyor (Hugging Face)",
     };
   }
   if (
@@ -54,19 +64,19 @@ function whisperPhaseFromLine(line: string): WhisperPhase | null {
   ) {
     return {
       key: "model_dl",
-      label: "Model ağırlıkları indiriliyor veya doğrulanıyor (büyük dosya tqdm)",
+      label: "Model dosyası indiriliyor veya doğrulanıyor (büyük paket)",
     };
   }
   if (isProgressNoiseLine(t)) {
     if (/frame/i.test(t)) {
       return {
         key: "mel_frames",
-        label: "Ses özeti işleniyor — tqdm (frame ilerlemesi)",
+        label: "Ses özeti çıkarılıyor (kare kare ilerleme)",
       };
     }
     return {
       key: "tqdm_run",
-      label: "İşlem devam ediyor — tqdm ilerleme çubuğu",
+      label: "Arka planda işlem sürüyor (ilerleme çubuğu)",
     };
   }
   return null;
@@ -144,6 +154,10 @@ async function detectWhisperModelCache(model: string): Promise<string | null> {
   return null;
 }
 
+function whisperVerboseLogs(): boolean {
+  return process.env.WHISPER_VERBOSE_LOGS === "1";
+}
+
 /** Whisper ile aynı makinedeki `python` + PyTorch’un CUDA kullanıp kullanmadığı (whisper subprocess’ten önce). */
 function probeTorchRuntimeSummary(): string {
   const probe = `import sys
@@ -164,13 +178,13 @@ except ImportError:
     });
     const line = (r.stdout ?? "").trim().split("\n")[0]?.trim() ?? "";
     if (!r.error && r.status === 0 && line.startsWith("GPU|")) {
-      return `GPU — ${line.slice(4)} (PyTorch CUDA; WHISPER_PYTHON)`;
+      return `Ekran kartı (GPU) kullanılabilir: ${line.slice(4)} — PyTorch CUDA (WHISPER_PYTHON)`;
     }
     if (!r.error && r.status === 0 && line === "CPU") {
-      return "CPU — PyTorch CUDA kapalı veya GPU yok (WHISPER_PYTHON)";
+      return "İşlemci (CPU) modu: PyTorch CUDA kapalı veya uygun GPU yok (WHISPER_PYTHON)";
     }
     if (!r.error && r.status === 0 && line === "UNKNOWN") {
-      return "PyTorch algılanamadı (WHISPER_PYTHON)";
+      return "PyTorch bulunamadı; cihaz bilgisi net değil (WHISPER_PYTHON)";
     }
   }
   const candidates: [string, string[]][] = [
@@ -186,16 +200,16 @@ except ImportError:
     if (r.error || r.status !== 0) continue;
     const line = (r.stdout ?? "").trim().split("\n")[0]?.trim() ?? "";
     if (line.startsWith("GPU|")) {
-      return `GPU — ${line.slice(4)} (PyTorch CUDA)`;
+      return `Ekran kartı (GPU) kullanılabilir: ${line.slice(4)} — PyTorch CUDA`;
     }
     if (line === "CPU") {
-      return "CPU — PyTorch CUDA kapalı veya GPU yok";
+      return "İşlemci (CPU) modu: PyTorch CUDA kapalı veya uygun GPU yok";
     }
     if (line === "UNKNOWN") {
-      return "PyTorch algılanamadı (import yok); cihaz bilinmiyor";
+      return "PyTorch yok veya algılanamadı; GPU/CPU seçimi Whisper tarafında belirlenecek";
     }
   }
-  return "Python çalıştırılamadı — PATH’te python/py yoksa cihaz sorgulanamaz";
+  return "Python bulunamadı; PATH’te python yoksa GPU/CPU özeti çıkmayabilir";
 }
 
 /**
@@ -209,9 +223,16 @@ export async function transcribeTurkishToSrt(
 ): Promise<void> {
   if (process.env.OPENAI_API_KEY) {
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1";
-    appendJobLog(
+    logSection(jobId, "☁️", "3/5 — Konuşmayı yazıya dökme (OpenAI)");
+    logBullet(
       jobId,
-      `OpenAI Transcription API: model=${model}, dil=tr, çıktı=srt. İşlem OpenAI sunucularında; yerel GPU/CPU kullanılmaz (dosya yükleniyor…)`
+      "Ses dosyası OpenAI sunucularına gönderiliyor; bu yolda kendi bilgisayarınızda GPU/CPU kullanılmaz."
+    );
+    logBullet(jobId, `Kullanılan model: ${model} — dil: Türkçe — çıktı: SRT`);
+    logWait(jobId, "Ses yükleniyor ve transkripsiyon isteniyor…");
+    logNote(
+      jobId,
+      "OpenAI Transcription kullanılıyor; formdan seçilen yerel Whisper modeli bu işte uygulanmaz."
     );
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const buf = await fs.readFile(audioPath);
@@ -220,19 +241,38 @@ export async function transcribeTurkishToSrt(
       type: ext === ".wav" ? "audio/wav" : "application/octet-stream",
     });
 
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model,
-      language: "tr",
-      response_format: "srt",
-    });
+    let oaiElapsed = 0;
+    const oaiHb = setInterval(() => {
+      oaiElapsed += 8;
+      logBullet(
+        jobId,
+        `3/5 · OpenAI yanıtı bekleniyor (${oaiElapsed} sn) — büyük dosyada süre uzayabilir.`
+      );
+      const cur = getJob(jobId);
+      if (cur?.status === "processing") {
+        updateJob(jobId, {
+          progressHint: `3/5 · Bulutta işleniyor (~${oaiElapsed} sn) — transkripsiyon`,
+        });
+      }
+    }, 8000);
+
+    let transcription: string;
+    try {
+      const res = await openai.audio.transcriptions.create({
+        file,
+        model,
+        language: "tr",
+        response_format: "srt",
+      });
+      transcription = res;
+    } finally {
+      clearInterval(oaiHb);
+    }
 
     await fs.writeFile(outSrtPath, transcription, "utf-8");
     const bytes = Buffer.byteLength(transcription, "utf8");
-    appendJobLog(
-      jobId,
-      `OpenAI yanıtı alındı, tr.srt yazıldı (${bytes} bayt). Yerel whisper çalıştırılmadı.`
-    );
+    logOk(jobId, `Türkçe altyazı dosyası kaydedildi (${bytes} bayt).`);
+    logNote(jobId, "Yerel Whisper çalıştırılmadı; işlem bulutta tamamlandı.");
     return;
   }
 
@@ -241,8 +281,11 @@ export async function transcribeTurkishToSrt(
   const whisperCmdParts = splitCommandLine(whisperCmdRaw);
   const whisperCmd = whisperCmdParts[0] ?? "whisper";
   const whisperCmdPrefixArgs = whisperCmdParts.slice(1);
-  /** Yerel varsayılan: kalite odaklı (RTX 3060 Ti vb. için uygun). Zayıf CPU için WHISPER_MODEL=small|medium */
-  const model = process.env.WHISPER_MODEL || "large-v3";
+  /** İş başında formdan; yoksa .env WHISPER_MODEL; yoksa large-v3 */
+  const model =
+    getJob(jobId)?.whisperModel?.trim() ||
+    process.env.WHISPER_MODEL ||
+    "large-v3";
 
   const extraFromEnv = process.env.WHISPER_EXTRA_ARGS?.trim()
     ? process.env.WHISPER_EXTRA_ARGS.trim().split(/\s+/)
@@ -275,18 +318,24 @@ export async function transcribeTurkishToSrt(
   ];
 
   const runtimeHint = probeTorchRuntimeSummary();
-  appendJobLog(
+  logSection(jobId, "🖥️", "3/5 — Konuşmayı yazıya dökme (yerel Whisper)");
+  logBullet(
     jobId,
-    `Yerel transkripsiyon: Whisper modeli=${model}, beklenen cihaz özeti=${runtimeHint} (whisper gerçek yükü bu Python ortamında çalıştırır)`
+    "Ses bu bilgisayarda işlenir; aşağıdaki özet PyTorch’un gördüğü ortamdır (gerçek yük Whisper ile aynı Python’da çalışır)."
   );
+  logOk(jobId, `Beklenen donanım özeti: ${runtimeHint}`);
   const cachePath = await detectWhisperModelCache(model);
-  appendJobLog(
-    jobId,
-    cachePath
-      ? `Whisper model cache bulundu: ${cachePath}`
-      : `Whisper model cache bulunamadı (${model}.pt). İlk çalıştırmada indirme yapılabilir.`
-  );
-  appendJobLog(jobId, `$ ${formatShellCommand(whisperCmd, args)}`);
+  if (cachePath) {
+    logOk(jobId, `Model önbellekte bulundu; tekrar indirme gerekmez.`);
+    logTech(jobId, cachePath);
+  } else {
+    logNote(
+      jobId,
+      `Önbellekte ${model}.pt görünmüyor. İlk çalıştırmada model internetten indirilebilir (biraz sürebilir).`
+    );
+  }
+  logBullet(jobId, `Kullanılacak model: ${model}`);
+  logTech(jobId, formatShellCommand(whisperCmd, args));
 
   let wavBytes = 0;
   try {
@@ -295,11 +344,19 @@ export async function transcribeTurkishToSrt(
   } catch {
     /* ignore */
   }
-  appendJobLog(
+  logBullet(
     jobId,
-    `Yerel Whisper: model=${model}, ~${(wavBytes / (1024 * 1024)).toFixed(1)} MiB WAV.${
-      initialPrompt ? " WHISPER_INITIAL_PROMPT kullanılıyor." : ""
-    } Kalite için genelde base < small < medium < large-v3 (daha yavaş, daha çok RAM/VRAM). --verbose True + PYTHONUNBUFFERED ile segment satırları loga düşer. FP16 uyarısı normaldir.`
+    `Ses dosyası yaklaşık ${(wavBytes / (1024 * 1024)).toFixed(1)} MB.${
+      initialPrompt ? " Bağlam için WHISPER_INITIAL_PROMPT kullanılıyor." : ""
+    }`
+  );
+  logNote(
+    jobId,
+    "Büyük model daha doğru olabilir; daha yavaş ve daha çok bellek kullanır. Uzun sessizlikler bazen normaldir. Ayrıntılı teknik log için ortam değişkeni: WHISPER_VERBOSE_LOGS=1"
+  );
+  logNote(
+    jobId,
+    "Geliştirme konsolunda yalnızca son satırlar görünür; tam günlük için sonuç sayfasındaki «İşlem günlüğü» paneline bakın (yukarı kaydırın)."
   );
 
   await new Promise<void>((resolve, reject) => {
@@ -322,41 +379,82 @@ export async function transcribeTurkishToSrt(
     const t0 = Date.now();
     const base = path.basename(audioPath, path.extname(audioPath));
     const generated = path.join(jobDir, `${base}.srt`);
+    const verbose = whisperVerboseLogs();
     let whisperPhaseKey = "init";
     let lastPhaseLabel =
-      "başladı — model RAM/GPU yüklemesi ve ilk ses penceresi (sessizlik birkaç dakika sürebilir)";
-    appendJobLog(jobId, `[whisper faz] ${lastPhaseLabel}`);
+      "Başlangıç: model belleğe alınıyor veya ilk ses parçası işleniyor (bir süre çıktı gelmeyebilir).";
+    logWait(jobId, lastPhaseLabel);
 
     const bumpPhase = (next: WhisperPhase | null) => {
       if (!next || next.key === whisperPhaseKey) return;
       whisperPhaseKey = next.key;
       lastPhaseLabel = next.label;
-      appendJobLog(jobId, `[whisper faz] ${next.label}`);
+      logWait(jobId, `Aşama: ${next.label}`);
     };
 
-    const heartbeatMs = Number(process.env.WHISPER_HEARTBEAT_MS) || 25_000;
+    const heartbeatMs = Number(process.env.WHISPER_HEARTBEAT_MS) || 10_000;
+
+    /** Tam stdout birikimi — nabızda “son çıktı” göstermek için */
+    let stdoutAccum = "";
 
     const whisperHeartbeatDetail = (elapsedSec: number): string => {
       if (whisperPhaseKey !== "init") {
-        return `son Whisper çıktısına göre aşama: ${lastPhaseLabel}`;
+        return `Son bilinen adım: ${lastPhaseLabel}`;
       }
       if (elapsedSec < 45) {
-        return `stderr henüz yeni aşama satırı göstermedi (normal) — muhtemelen model VRAM'e alınıyor veya ilk uzun ses penceresi işleniyor`;
+        return "Henüz ayrıntılı satır gelmediyse bu normal olabilir; model yükleniyor veya ilk uzun ses parçası işleniyor.";
       }
       if (elapsedSec < 120) {
-        return `sessiz çıktı uzadı (${elapsedSec}s) — large-v3 için yükleme + ilk decode gecikebilir; yakında tqdm veya [timestamp] segment satırları gelebilir`;
+        return "Bekleme uzadı; büyük modelde ilk çözümleme gecikebilir. Birazdan ilerleme veya zaman satırları görünebilir.";
       }
-      return `uzun sessizlik (${elapsedSec}s) — uzun WAV + large model için sık görülür; Görev Yöneticisi’nde Python/GPU kullanımı kontrol edilebilir`;
+      return "Uzun süredir sessiz; uzun ses + büyük modelde sık görülür. İsterseniz Görev Yöneticisi’nde Python / GPU kullanımına bakın.";
+    };
+
+    /** Aynı kesiti tekrar tekrar basmamak için */
+    let lastLoggedPipeDigest = "";
+    /** Tamamen sessiz stderr/stdout uyarısını sık basmamak için (sn) */
+    let lastEmptyPipeNoticeSec = -9999;
+
+    const digestTail = (a: string, b: string, max = 520): string => {
+      const s = `${a}\n${b}`.trim();
+      if (!s) return "";
+      const t = s.slice(-max).replace(/\s+/g, " ").trim();
+      return t.length > 280 ? `…${t.slice(-280)}` : t;
     };
 
     const heartbeat = setInterval(() => {
       const sec = Math.floor((Date.now() - t0) / 1000);
-      appendJobLog(
-        jobId,
-        `[whisper] çalışıyor (${sec}s) — ${whisperHeartbeatDetail(sec)}`
-      );
+      logNote(jobId, `Hâlâ çalışıyor (${sec} sn) — ${whisperHeartbeatDetail(sec)}`);
+
+      const pipeTail = digestTail(err, stdoutAccum);
+      if (pipeTail && pipeTail !== lastLoggedPipeDigest) {
+        lastLoggedPipeDigest = pipeTail;
+        logTech(
+          jobId,
+          `Whisper süreç çıktısı (stderr+stdout son kesit): ${pipeTail}`
+        );
+      } else if (
+        sec >= 60 &&
+        !pipeTail &&
+        whisperPhaseKey === "init" &&
+        sec - lastEmptyPipeNoticeSec >= 90
+      ) {
+        lastEmptyPipeNoticeSec = sec;
+        logBullet(
+          jobId,
+          `Hâlâ stderr/stdout’ta görünür satır yok (${sec} sn) — model yüklenirken sessiz kalabilir; python.exe CPU/GPU kullanımına bakın veya WHISPER_VERBOSE_LOGS=1 deneyin.`
+        );
+      }
+
+      const cur = getJob(jobId);
+      if (cur?.status === "processing") {
+        updateJob(jobId, {
+          progressHint: `3/5 · Konuşma yazıya dökülüyor (${sec} sn) — ${lastPhaseLabel}`,
+        });
+      }
     }, heartbeatMs);
     let lastCueCount = 0;
+    let lastCueMilestoneLogged = 0;
     const cuePollMs = Number(process.env.WHISPER_CUE_POLL_MS) || 4000;
     const cuePoll = setInterval(async () => {
       if (settled) return;
@@ -365,12 +463,28 @@ export async function transcribeTurkishToSrt(
         const cues = parseSrtCuesLoose(partial);
         if (cues.length <= lastCueCount) return;
         const newlyAdded = cues.slice(lastCueCount);
-        lastCueCount = cues.length;
-        for (const cue of newlyAdded) {
-          appendJobLog(
-            jobId,
-            `[whisper cue] ${cue.start} --> ${cue.end} | ${cue.text.slice(0, 300)}`
-          );
+        const total = cues.length;
+        lastCueCount = total;
+        if (verbose) {
+          for (const cue of newlyAdded) {
+            logTech(
+              jobId,
+              `${cue.start} → ${cue.end} — ${cue.text.slice(0, 200)}`
+            );
+          }
+        } else {
+          const step = 18;
+          if (
+            total === 1 ||
+            total >= lastCueMilestoneLogged + step ||
+            (total >= 10 && total % 100 === 0)
+          ) {
+            logOk(
+              jobId,
+              `Geçici altyazı dosyasında ${total} satır oluştu (işlem devam ediyor).`
+            );
+            lastCueMilestoneLogged = total;
+          }
         }
       } catch {
         /* file henüz oluşmamış olabilir */
@@ -387,10 +501,12 @@ export async function transcribeTurkishToSrt(
     let carryErr = "";
     /** tqdm indirme / uyarı — segment kotasından ayrı */
     let progressLinesLogged = 0;
-    const maxProgressLines = 500;
+    const maxProgressLines = verbose ? 500 : 48;
     /** tqdm dışı stderr (Traceback vb.) — sınırlı */
     let metaLinesLogged = 0;
-    const maxMetaLines = 120;
+    const maxMetaLines = verbose ? 120 : 48;
+    let segmentLinesLogged = 0;
+    const maxSegmentLines = verbose ? 10_000 : 24;
 
     const handleLine = (raw: string, stream: "stdout" | "stderr"): void => {
       const line = raw.trim();
@@ -400,9 +516,18 @@ export async function transcribeTurkishToSrt(
         bumpPhase({
           key: "transcribe_segments",
           label:
-            "Yazıya döküm — segment metinleri üretiliyor (her satır bir zaman aralığı)",
+            "Metin üretimi: konuşma parçaları zaman damgalarıyla yazılıyor",
         });
-        appendJobLog(jobId, `[whisper segment] ${line.slice(0, 2000)}`);
+        if (segmentLinesLogged < maxSegmentLines) {
+          logTech(jobId, line.slice(0, 400));
+          segmentLinesLogged++;
+        } else if (segmentLinesLogged === maxSegmentLines) {
+          logNote(
+            jobId,
+            "Çok sayıda metin satırı var; günlükte yalnızca ilk kısmı gösteriliyor. Tam liste için WHISPER_VERBOSE_LOGS=1"
+          );
+          segmentLinesLogged++;
+        }
         return;
       }
 
@@ -410,14 +535,14 @@ export async function transcribeTurkishToSrt(
 
       if (isProgressNoiseLine(line)) {
         if (progressLinesLogged < maxProgressLines) {
-          appendJobLog(jobId, `[whisper ilerleme] ${line.slice(0, 800)}`);
+          logTech(jobId, line.slice(0, 500));
           progressLinesLogged++;
         }
         return;
       }
 
       if (metaLinesLogged < maxMetaLines) {
-        appendJobLog(jobId, `[whisper ${stream}] ${line.slice(0, 800)}`);
+        logTech(jobId, `[${stream}] ${line.slice(0, 600)}`);
         metaLinesLogged++;
       }
     };
@@ -432,7 +557,9 @@ export async function transcribeTurkishToSrt(
     };
 
     proc.stdout?.on("data", (d: Buffer) => {
-      carryOut += d.toString();
+      const chunk = d.toString();
+      stdoutAccum += chunk;
+      carryOut += chunk;
       carryOut = flush(carryOut, "stdout");
     });
     proc.stderr?.on("data", (d: Buffer) => {
@@ -449,9 +576,9 @@ export async function transcribeTurkishToSrt(
         err.code === "ENOENT"
           ? " WHISPER_CMD içine tam executable yolu verin (gerekirse arg ile): örn WHISPER_CMD=\"C:\\Users\\...\\python.exe -m whisper\" veya WHISPER_CMD=C:\\Users\\...\\venv\\Scripts\\whisper.exe"
           : "";
-      appendJobLog(
+      logError(
         jobId,
-        `[whisper] başlatılamadı (${err.code ?? "?"}): ${err.message}.${hint}`
+        `Whisper başlatılamadı (${err.code ?? "?"}): ${err.message}.${hint}`
       );
       reject(err);
     });
@@ -473,7 +600,13 @@ export async function transcribeTurkishToSrt(
         resolve();
       } else {
         settled = true;
-        appendJobLog(jobId, `[whisper] HATA çıkış ${code}`);
+        logError(
+          jobId,
+          `Whisper beklenmedik şekilde kapandı (kod ${code}). OPENAI_API_KEY veya yerel whisper gerekli olabilir.`
+        );
+        if (err.trim()) {
+          logTech(jobId, err.slice(-1800));
+        }
         reject(
           new Error(
             `${whisperCmd} failed (${code}). OPENAI_API_KEY veya whisper CLI gerekli. ${err.slice(-1500)}`
@@ -493,9 +626,6 @@ export async function transcribeTurkishToSrt(
     );
   }
   await fs.rename(generated, outSrtPath);
-  appendJobLog(
-    jobId,
-    `[whisper] bitti: model=${model}, işlem tamamlandı (cihaz özeti iş başında günlükte)`
-  );
-  appendJobLog(jobId, `Dosya taşındı: ${base}.srt → tr.srt`);
+  logOk(jobId, `Yazıya dökme bitti. Kullanılan model: ${model}.`);
+  logBullet(jobId, `Çıktı dosyası düzenlendi: ${base}.srt → tr.srt`);
 }

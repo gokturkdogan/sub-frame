@@ -1,11 +1,9 @@
 import { createReadStream } from "fs";
 import fs from "fs/promises";
-import { finished } from "stream/promises";
 import { NextResponse } from "next/server";
 import { Readable } from "stream";
 import { validate as validateUuid } from "uuid";
 
-import { deleteJobFiles } from "@/lib/job-store";
 import { getJobPaths } from "@/lib/paths";
 
 export const runtime = "nodejs";
@@ -28,11 +26,8 @@ export async function GET(_request: Request, context: Params) {
     );
   }
 
+  /** İndirme bitince işi silme: sayfa /status yoklaması 404 verir. Temizlik `scheduleJobDeletion` (pipeline) ile yapılır. */
   const nodeStream = createReadStream(paths.finalMp4);
-  void finished(nodeStream)
-    .then(() => deleteJobFiles(id))
-    .catch(() => deleteJobFiles(id));
-
   const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
   return new NextResponse(webStream, {

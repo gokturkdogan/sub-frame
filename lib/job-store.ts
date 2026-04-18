@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 
+import type { PipelineStepCode } from "@/lib/pipeline-steps";
 import { getJobDir } from "@/lib/paths";
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
@@ -8,6 +9,14 @@ export type JobRecord = {
   status: JobStatus;
   progress: number;
   step: string;
+  /** İlerleme çubuğu altında: adım x/y, kısa açıklama (yüzdeyi bağlamlandırır) */
+  progressHint?: string;
+  /** Checklist / son adım takibi için makine kodu */
+  stepCode?: PipelineStepCode;
+  /** Türkçe hedefte çeviri adımı yok */
+  skipTranslate?: boolean;
+  /** Yerel Whisper için seçilen model (openai-whisper CLI) */
+  whisperModel?: string;
   error?: string;
   downloadPath?: string;
   /** Zaman damgalı metin satırları: komutlar, ffmpeg/whisper çıktısı özeti. */
@@ -71,6 +80,8 @@ export function createJobRecord(jobId: string): JobRecord {
     status: "queued",
     progress: 0,
     step: "Sırada",
+    stepCode: "queued",
+    skipTranslate: false,
     logs: [],
     createdAt: Date.now(),
   };
