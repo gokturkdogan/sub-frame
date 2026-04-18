@@ -5,7 +5,8 @@ import { appendJobLog } from "@/lib/job-store";
 import { formatShellCommand } from "@/lib/shell-cmd";
 
 function ffmpegBin(): string {
-  return process.env.FFMPEG_PATH || "ffmpeg";
+  const p = process.env.FFMPEG_PATH?.trim();
+  return p ? p : "ffmpeg";
 }
 
 function runFfmpeg(args: string[], jobId: string, label = "ffmpeg"): Promise<void> {
@@ -32,7 +33,17 @@ function runFfmpeg(args: string[], jobId: string, label = "ffmpeg"): Promise<voi
         linesLogged++;
       }
     });
-    proc.on("error", reject);
+    proc.on("error", (err: NodeJS.ErrnoException) => {
+      const missing =
+        err.code === "ENOENT"
+          ? " FFmpeg kurulu değil veya PATH’te yok. https://ffmpeg.org/download.html — veya .env içinde tam yol: FFMPEG_PATH=C:\\ffmpeg\\bin\\ffmpeg.exe"
+          : "";
+      appendJobLog(
+        jobId,
+        `[${label}] başlatılamadı (${err.code ?? "?"}): ${err.message}.${missing}`
+      );
+      reject(err);
+    });
     proc.on("close", (code) => {
       if (carry.trim()) {
         appendJobLog(jobId, `[${label}] ${carry.trim().slice(0, 500)}`);

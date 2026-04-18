@@ -1,20 +1,13 @@
 export const TARGET_LANGUAGES: { code: string; label: string }[] = [
+  { code: "tr", label: "Türkçe" },
   { code: "en", label: "İngilizce" },
   { code: "ru", label: "Rusça" },
-  { code: "es", label: "İspanyolca" },
-  { code: "de", label: "Almanca" },
-  { code: "fr", label: "Fransızca" },
-  { code: "it", label: "İtalyanca" },
-  { code: "pt", label: "Portekizce" },
-  { code: "ar", label: "Arapça" },
-  { code: "zh-CN", label: "Çince (Basitleştirilmiş)" },
-  { code: "ja", label: "Japonca" },
-  { code: "ko", label: "Korece" },
-  { code: "nl", label: "Flemenkçe" },
-  { code: "pl", label: "Lehçe" },
-  { code: "uk", label: "Ukraynaca" },
-  { code: "hi", label: "Hintçe" },
 ];
+
+/** Whisper zaten Türkçe SRT üretir; bu dilde çeviri adımı atlanır. */
+export function isTurkishSubtitleTarget(targetLang: string): boolean {
+  return targetLang.split("-")[0]?.toLowerCase() === "tr";
+}
 
 /**
  * ISO 639-2/T three-letter tag for MP4 subtitle metadata (`-metadata:s:s:0 language=`).

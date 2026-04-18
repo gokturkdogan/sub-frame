@@ -16,8 +16,17 @@ export type JobRecord = {
   completedAt?: number;
 };
 
-const jobs = new Map<string, JobRecord>();
-const cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Dev’de sıcak yenilemede modül sıfırlanmasın diye süreç genelinde tek Map (tam sunucu yeniden başlatılırken yine silinir). */
+type JobsGlobal = typeof globalThis & {
+  __subframeJobs?: Map<string, JobRecord>;
+  __subframeCleanupTimers?: Map<string, ReturnType<typeof setTimeout>>;
+};
+const g = globalThis as JobsGlobal;
+const jobs = g.__subframeJobs ?? new Map<string, JobRecord>();
+g.__subframeJobs = jobs;
+const cleanupTimers =
+  g.__subframeCleanupTimers ?? new Map<string, ReturnType<typeof setTimeout>>();
+g.__subframeCleanupTimers = cleanupTimers;
 
 const DEFAULT_TTL_MS = 45 * 60 * 1000;
 

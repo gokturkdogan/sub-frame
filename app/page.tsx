@@ -28,7 +28,7 @@ import { Film, Upload } from "lucide-react";
 export default function HomePage() {
   const router = useRouter();
   const [file, setFile] = React.useState<File | null>(null);
-  const [targetLang, setTargetLang] = React.useState("en");
+  const [targetLang, setTargetLang] = React.useState("tr");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -81,9 +81,9 @@ export default function HomePage() {
           <CardHeader>
             <CardTitle className="text-xl">Video altyazı</CardTitle>
             <CardDescription>
-              Videonuzu yükleyin. Konuşmayı Türkçe olarak yazıya döker, altyazıları seçtiğiniz
-              dile çevirir ve indirebileceğiniz bir MP4 oluştururuz. İşlem bittikten sonra
-              sunucuda veri tutulmaz.
+              Videonuzu yükleyin. Konuşmayı Türkçe olarak yazıya dökeriz; altyazı dilini Türkçe
+              seçerseniz çeviri yapılmaz, İngilizce veya Rusça seçerseniz bu dile çevirip MP4
+              oluştururuz. İşlem bittikten sonra sunucuda veri tutulmaz.
             </CardDescription>
           </CardHeader>
           <form onSubmit={onSubmit}>
@@ -143,7 +143,8 @@ export default function HomePage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Önce ses Türkçe olarak yazıya dökülür, ardından bu dile düz çeviri yapılır.
+                  Türkçe: yalnızca yazıya döküm ve videoya gömme. İngilizce / Rusça: önce Türkçe
+                  SRT, sonra çeviri.
                 </p>
               </div>
 

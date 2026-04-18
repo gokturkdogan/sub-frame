@@ -8,7 +8,7 @@ import {
   updateJob,
 } from "@/lib/job-store";
 import { getJobPaths } from "@/lib/paths";
-import { subtitleLanguageTag } from "@/lib/lang";
+import { isTurkishSubtitleTarget, subtitleLanguageTag } from "@/lib/lang";
 import { extractAudio, muxSoftSubtitles } from "@/workers/ffmpeg";
 import { transcribeTurkishToSrt } from "@/workers/whisper";
 import { translateSrtFile } from "@/workers/translate";
@@ -63,21 +63,29 @@ export async function runPipeline(jobId: string, targetLang: string): Promise<vo
       stopWhisperPulse();
     }
 
-    progress(58, "Altyazılar çevriliyor");
-    const stopTranslatePulse = startBoundedProgressPulse(jobId, 78, 10_000);
-    try {
-      await translateSrtFile(p.trSrt, p.translatedSrt, targetLang, jobId);
-    } finally {
-      stopTranslatePulse();
+    const turkishOnly = isTurkishSubtitleTarget(targetLang);
+    let srtForMux = p.translatedSrt;
+
+    if (turkishOnly) {
+      appendJobLog(jobId, "Hedef dil Türkçe: çeviri atlanıyor, tr.srt doğrudan gömülüyor.");
+      srtForMux = p.trSrt;
+    } else {
+      progress(58, "Altyazılar çevriliyor");
+      const stopTranslatePulse = startBoundedProgressPulse(jobId, 78, 10_000);
+      try {
+        await translateSrtFile(p.trSrt, p.translatedSrt, targetLang, jobId);
+      } finally {
+        stopTranslatePulse();
+      }
     }
 
-    progress(82, "Altyazı videoya ekleniyor");
+    progress(turkishOnly ? 72 : 82, "Altyazı videoya ekleniyor");
     const langTag = subtitleLanguageTag(targetLang);
     const stopMuxPulse = startBoundedProgressPulse(jobId, 96, 8000);
     try {
       await muxSoftSubtitles(
         p.inputVideo,
-        p.translatedSrt,
+        srtForMux,
         p.finalMp4,
         langTag,
         jobId
