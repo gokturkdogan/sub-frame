@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "child_process";
+import { existsSync, statSync } from "fs";
 import fs from "fs/promises";
 import path from "path";
 
@@ -36,6 +37,69 @@ function isProgressNoiseLine(line: string): boolean {
 }
 
 type WhisperPhase = { key: string; label: string };
+
+/** tqdm / pip indirme çubuğu ANSI kaçışları */
+function stripAnsiForLog(s: string): string {
+  return s
+    .replace(/\x1b\[[\d;?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b\]8;[^\x07]*\x07/g, "");
+}
+
+/**
+ * Terminale benzer: \\r aynı satırı günceller; ham birikimde yüzlerce tqdm karesi yan yana yapışmasın.
+ * Son satır durumu newline ile birleştirilir.
+ */
+function applyCarriageReturnsForDisplay(s: string): string {
+  let line = "";
+  const lines: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "\r") {
+      line = "";
+      continue;
+    }
+    if (ch === "\n") {
+      lines.push(line);
+      line = "";
+      continue;
+    }
+    line += ch;
+  }
+  if (line.length) lines.push(line);
+  return lines.join("\n");
+}
+
+/** Bir metin parçasında (\\n ile ayrılmış satır) tqdm güncellemelerinden yalnızca son görünür satır. */
+function lastVisibleAfterCr(segment: string): string {
+  const parts = segment.split(/\r/);
+  return (parts[parts.length - 1] ?? "").trim();
+}
+
+/**
+ * Nabız için: birleşik pipe metninden son anlamlı tqdm / indirme satırı (veya kısa son satır).
+ */
+function extractLastProgressLineForLog(rawErr: string, rawOut: string): string {
+  const merged = applyCarriageReturnsForDisplay(
+    stripAnsiForLog(`${rawErr}\n${rawOut}`)
+  );
+  const lines = merged
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const L = lines[i] ?? "";
+    if (
+      isProgressNoiseLine(L) ||
+      /\d+%\|/.test(L) ||
+      /\d+(?:\.\d+)?\s*[KMGT]i?B\s*\/\s*\d+(?:\.\d+)?\s*[GMGT]i?B/.test(L)
+    ) {
+      return L.length > 240 ? `…${L.slice(-240)}` : L;
+    }
+  }
+  const last = lines[lines.length - 1] ?? "";
+  if (last.length > 0 && last.length < 320) return last;
+  return last.length > 240 ? `…${last.slice(-240)}` : last;
+}
 
 /** stderr/stdout satırından kabaca hangi aşamada olduğumuzu çıkarır (Whisper CLI çıktısına bağlıdır). */
 function whisperPhaseFromLine(line: string): WhisperPhase | null {
@@ -399,35 +463,91 @@ export async function transcribeTurkishToSrt(
 
     /** Tam stdout birikimi — nabızda “son çıktı” göstermek için */
     let stdoutAccum = "";
-
-    const whisperHeartbeatDetail = (elapsedSec: number): string => {
-      if (whisperPhaseKey !== "init") {
-        return `Son bilinen adım: ${lastPhaseLabel}`;
-      }
-      if (elapsedSec < 45) {
-        return "Henüz ayrıntılı satır gelmediyse bu normal olabilir; model yükleniyor veya ilk uzun ses parçası işleniyor.";
-      }
-      if (elapsedSec < 120) {
-        return "Bekleme uzadı; büyük modelde ilk çözümleme gecikebilir. Birazdan ilerleme veya zaman satırları görünebilir.";
-      }
-      return "Uzun süredir sessiz; uzun ses + büyük modelde sık görülür. İsterseniz Görev Yöneticisi’nde Python / GPU kullanımına bakın.";
-    };
+    let err = "";
+    let lastCueCount = 0;
+    let lastCueMilestoneLogged = 0;
 
     /** Aynı kesiti tekrar tekrar basmamak için */
     let lastLoggedPipeDigest = "";
     /** Tamamen sessiz stderr/stdout uyarısını sık basmamak için (sn) */
     let lastEmptyPipeNoticeSec = -9999;
 
-    const digestTail = (a: string, b: string, max = 520): string => {
-      const s = `${a}\n${b}`.trim();
-      if (!s) return "";
-      const t = s.slice(-max).replace(/\s+/g, " ").trim();
-      return t.length > 280 ? `…${t.slice(-280)}` : t;
+    const digestTail = (
+      a: string,
+      b: string,
+      maxLines = 14,
+      maxChars = 720
+    ): string => {
+      const merged = stripAnsiForLog(`${a}\n${b}`);
+      const normalized = applyCarriageReturnsForDisplay(merged).trim();
+      if (!normalized) return "";
+      const parts = normalized
+        .split(/\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      let tail = parts.slice(-maxLines).join("\n");
+      if (tail.length > maxChars) {
+        tail = "…\n" + tail.slice(-(maxChars - 2));
+      }
+      return tail;
+    };
+
+    const describeModelOnDisk = (): string => {
+      try {
+        const home = process.env.USERPROFILE || process.env.HOME || "";
+        const pt =
+          cachePath ||
+          (home ? path.join(home, ".cache", "whisper", `${model}.pt`) : "");
+        if (!pt || !existsSync(pt)) return "";
+        const sz = statSync(pt).size;
+        return ` Önbellekteki model dosyası (${path.basename(pt)}): şu an ~${(sz / (1024 * 1024 * 1024)).toFixed(2)} GB (indirme sürüyorsa bu değer nabızlar arası artar).`;
+      } catch {
+        return "";
+      }
+    };
+
+    const buildWhisperPulseMessage = (elapsedSec: number): string => {
+      const pipeLine = extractLastProgressLineForLog(err, stdoutAccum);
+      const diskHint = describeModelOnDisk();
+      const srtHint =
+        lastCueCount > 0
+          ? ` Geçici Türkçe .srt: ${lastCueCount} zamanlı satır üretildi.`
+          : " Geçici .srt satırı henüz yok — model hazırlandıktan sonra dolmaya başlar.";
+
+      let arka: string;
+      if (pipeLine) {
+        arka = ` Son süreç çıktısı (genelde tqdm / log): ${pipeLine}`;
+      } else if (whisperPhaseKey === "model_dl" || whisperPhaseKey === "hf_fetch") {
+        arka =
+          " Henüz kısa tqdm satırı görünmüyor olabilir; büyük .pt indiriliyor veya doğrulanıyor.";
+      } else if (whisperPhaseKey === "transcribe_segments") {
+        arka =
+          " Transkripsiyon aşaması; verbose kapalıysa günlükte az satır görünür.";
+      } else if (whisperPhaseKey === "init") {
+        arka =
+          " Stderr’da henüz az satır: PyTorch model ağırlıklarını RAM/VRAM’e yüklüyor veya diske yazıyor olabilir.";
+      } else {
+        arka = "";
+      }
+
+      let uzun = "";
+      if (elapsedSec >= 90 && !pipeLine && whisperPhaseKey === "init") {
+        uzun =
+          " Uzun süre tqdm yoksa: WHISPER_VERBOSE_LOGS=1 veya Görev Yöneticisi → python.exe CPU/GPU.";
+      }
+
+      return (
+        `Aşama: «${lastPhaseLabel}» [${whisperPhaseKey}] · Model: ${model}.` +
+        arka +
+        diskHint +
+        srtHint +
+        uzun
+      );
     };
 
     const heartbeat = setInterval(() => {
       const sec = Math.floor((Date.now() - t0) / 1000);
-      logNote(jobId, `Hâlâ çalışıyor (${sec} sn) — ${whisperHeartbeatDetail(sec)}`);
+      logNote(jobId, `[Whisper ${sec}s] ${buildWhisperPulseMessage(sec)}`);
 
       const pipeTail = digestTail(err, stdoutAccum);
       if (pipeTail && pipeTail !== lastLoggedPipeDigest) {
@@ -445,19 +565,21 @@ export async function transcribeTurkishToSrt(
         lastEmptyPipeNoticeSec = sec;
         logBullet(
           jobId,
-          `Hâlâ stderr/stdout’ta görünür satır yok (${sec} sn) — model yüklenirken sessiz kalabilir; python.exe CPU/GPU kullanımına bakın veya WHISPER_VERBOSE_LOGS=1 deneyin.`
+          `[Whisper ${sec}s] stderr/stdout’ta henüz birleşik kesit yok — model sessiz indirilebilir; python.exe CPU/GPU kullanımına bakın veya WHISPER_VERBOSE_LOGS=1.`
         );
       }
 
       const cur = getJob(jobId);
       if (cur?.status === "processing") {
+        const shortPipe = extractLastProgressLineForLog(err, stdoutAccum).slice(
+          0,
+          72
+        );
         updateJob(jobId, {
-          progressHint: `3/5 · Konuşma yazıya dökülüyor (${sec} sn) — ${lastPhaseLabel}`,
+          progressHint: `3/5 · ~${sec}s · ${lastPhaseLabel}${shortPipe ? ` · ${shortPipe}` : ""} · .srt satır: ${lastCueCount}`,
         });
       }
     }, heartbeatMs);
-    let lastCueCount = 0;
-    let lastCueMilestoneLogged = 0;
     const cuePollMs = Number(process.env.WHISPER_CUE_POLL_MS) || 4000;
     const cuePoll = setInterval(async () => {
       if (settled) return;
@@ -499,7 +621,6 @@ export async function transcribeTurkishToSrt(
       clearInterval(cuePoll);
     };
 
-    let err = "";
     let carryOut = "";
     let carryErr = "";
     /** tqdm indirme / uyarı — segment kotasından ayrı */
@@ -553,9 +674,11 @@ export async function transcribeTurkishToSrt(
     const flush = (buf: string, stream: "stdout" | "stderr"): string => {
       const parts = buf.split("\n");
       const rest = parts.pop() ?? "";
-      for (const raw of parts) {
-        handleLine(raw, stream);
+      for (const segment of parts) {
+        const raw = lastVisibleAfterCr(segment);
+        if (raw) handleLine(raw, stream);
       }
+      /** Ham kısım (içinde \\r olabilir); bir sonraki chunk ile birleşecek */
       return rest;
     };
 
@@ -589,13 +712,15 @@ export async function transcribeTurkishToSrt(
       stopTimers();
       if (settled) return;
       if (carryOut.trim()) {
-        for (const raw of carryOut.split("\n")) {
-          handleLine(raw, "stdout");
+        for (const segment of carryOut.split("\n")) {
+          const raw = lastVisibleAfterCr(segment);
+          if (raw) handleLine(raw, "stdout");
         }
       }
       if (carryErr.trim()) {
-        for (const raw of carryErr.split("\n")) {
-          handleLine(raw, "stderr");
+        for (const segment of carryErr.split("\n")) {
+          const raw = lastVisibleAfterCr(segment);
+          if (raw) handleLine(raw, "stderr");
         }
       }
       if (code === 0) {

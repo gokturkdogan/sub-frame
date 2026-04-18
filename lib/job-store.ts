@@ -17,8 +17,12 @@ export type JobRecord = {
   skipTranslate?: boolean;
   /** Yerel Whisper için seçilen model (openai-whisper CLI) */
   whisperModel?: string;
+  /** Çeviri: google | libre | ollama:… */
+  translateEngine?: string;
   error?: string;
   downloadPath?: string;
+  /** İndirme önerilen dosya adı (Whisper + dil + çeviri motoru) */
+  downloadFilename?: string;
   /** Zaman damgalı metin satırları: komutlar, ffmpeg/whisper çıktısı özeti. */
   logs: string[];
   createdAt: number;

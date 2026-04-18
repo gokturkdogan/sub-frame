@@ -17,6 +17,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { TARGET_LANGUAGES } from "@/lib/lang";
 import {
+  DEFAULT_TRANSLATE_ENGINE,
+  TRANSLATE_ENGINE_OPTIONS,
+} from "@/lib/translate-models";
+import type { WhisperModelOption } from "@/lib/whisper-models";
+import {
   DEFAULT_WHISPER_MODEL,
   WHISPER_MODEL_OPTIONS,
 } from "@/lib/whisper-models";
@@ -28,6 +33,9 @@ export default function HomePage() {
   const [file, setFile] = React.useState<File | null>(null);
   const [targetLang, setTargetLang] = React.useState("tr");
   const [whisperModel, setWhisperModel] = React.useState(DEFAULT_WHISPER_MODEL);
+  const [translateEngine, setTranslateEngine] = React.useState(
+    DEFAULT_TRANSLATE_ENGINE
+  );
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [videoThumb, setVideoThumb] = React.useState<string | null>(null);
@@ -159,6 +167,7 @@ export default function HomePage() {
       body.set("file", file);
       body.set("targetLang", targetLang);
       body.set("whisperModel", whisperModel);
+      body.set("translateEngine", translateEngine);
       const res = await fetch("/api/process", { method: "POST", body });
       const data = (await res.json()) as { jobId?: string; error?: string };
       if (!res.ok) {
@@ -240,9 +249,14 @@ export default function HomePage() {
         <form onSubmit={onSubmit}>
           <CardContent className="relative flex flex-col gap-7 pt-2">
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Video</Label>
-              <button
-                type="button"
+              <Label htmlFor="video-dropzone" className="text-sm font-medium">
+                Video
+              </Label>
+              {/* <button> içinde başka <button> olamaz; drop zone div + role="button" */}
+              <div
+                id="video-dropzone"
+                role="button"
+                tabIndex={0}
                 onDragOver={(ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
@@ -253,8 +267,14 @@ export default function HomePage() {
                   if (f) onPick(f);
                 }}
                 onClick={() => inputRef.current?.click()}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    inputRef.current?.click();
+                  }
+                }}
                 className={cn(
-                  "group/dz relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-violet-400/45 bg-gradient-to-b from-muted/50 to-muted/15 text-muted-foreground shadow-inner transition duration-500 hover:-translate-y-0.5 hover:border-fuchsia-400/55 hover:from-violet-500/10 hover:to-fuchsia-500/5 hover:shadow-[0_0_48px_-12px_rgba(139,92,246,0.45)] dark:border-violet-500/35 dark:from-muted/25 dark:to-muted/5 dark:hover:border-fuchsia-400/40",
+                  "group/dz relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-violet-400/45 bg-gradient-to-b from-muted/50 to-muted/15 text-muted-foreground shadow-inner outline-none transition duration-500 hover:-translate-y-0.5 hover:border-fuchsia-400/55 hover:from-violet-500/10 hover:to-fuchsia-500/5 hover:shadow-[0_0_48px_-12px_rgba(139,92,246,0.45)] focus-visible:border-violet-500 focus-visible:ring-2 focus-visible:ring-violet-500/35 dark:border-violet-500/35 dark:from-muted/25 dark:to-muted/5 dark:hover:border-fuchsia-400/40",
                   file
                     ? "gap-0 px-0 py-0"
                     : "gap-4 px-6 py-16 text-center text-sm",
@@ -317,7 +337,7 @@ export default function HomePage() {
                     </span>
                   </>
                 )}
-              </button>
+              </div>
               <input
                 ref={inputRef}
                 type="file"
@@ -327,21 +347,38 @@ export default function HomePage() {
               />
             </div>
 
-            <div className="flex flex-col gap-4 border-t border-border/40 bg-gradient-to-t from-muted/30 to-transparent pt-6 sm:flex-row sm:items-end sm:gap-4">
-              <LanguageSelect
-                id="lang"
-                label="Altyazı dili"
-                languages={TARGET_LANGUAGES}
-                value={targetLang}
-                onChange={setTargetLang}
-                fullWidth
-                className="min-w-0 flex-1"
-              />
+            <div className="flex flex-col gap-4 border-t border-border/40 bg-gradient-to-t from-muted/30 to-transparent pt-6">
+              <div className="grid w-full grid-cols-2 items-end gap-3 sm:gap-4">
+                <LanguageSelect
+                  id="lang"
+                  label="Altyazı dili"
+                  languages={TARGET_LANGUAGES}
+                  value={targetLang}
+                  onChange={setTargetLang}
+                  fullWidth
+                  className="min-w-0"
+                />
+                {targetLang !== "tr" ? (
+                  <WhisperModelSelect
+                    id="translate-engine"
+                    label="Çeviri motoru"
+                    options={
+                      TRANSLATE_ENGINE_OPTIONS as unknown as WhisperModelOption[]
+                    }
+                    value={translateEngine}
+                    onChange={setTranslateEngine}
+                    fullWidth
+                    className="min-w-0"
+                  />
+                ) : (
+                  <div aria-hidden />
+                )}
+              </div>
               <Button
                 type="submit"
                 disabled={busy}
                 size="lg"
-                className="group/submit relative h-12 w-full shrink-0 overflow-hidden rounded-xl border border-white/15 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-violet-600 bg-[length:200%_100%] text-base font-semibold tracking-tight text-white shadow-lg shadow-violet-500/25 transition-all duration-300 animate-gradient-flow hover:border-white/35 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.2),0_8px_40px_-4px_rgba(167,139,250,0.55),0_0_60px_-12px_rgba(217,70,239,0.35)] hover:brightness-[1.08] active:scale-[0.98] disabled:hover:shadow-none disabled:hover:brightness-100 dark:border-white/10 dark:text-white dark:shadow-violet-900/40 dark:hover:border-white/30 dark:hover:shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_8px_48px_-4px_rgba(139,92,246,0.45),0_0_80px_-8px_rgba(192,132,252,0.35)] dark:hover:brightness-110 sm:w-auto sm:min-w-[220px]"
+                className="group/submit relative h-12 w-full shrink-0 overflow-hidden rounded-xl border border-white/15 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-violet-600 bg-[length:200%_100%] text-base font-semibold tracking-tight text-white shadow-lg shadow-violet-500/25 transition-all duration-300 animate-gradient-flow hover:border-white/35 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.2),0_8px_40px_-4px_rgba(167,139,250,0.55),0_0_60px_-12px_rgba(217,70,239,0.35)] hover:brightness-[1.08] active:scale-[0.98] disabled:hover:shadow-none disabled:hover:brightness-100 dark:border-white/10 dark:text-white dark:shadow-violet-900/40 dark:hover:border-white/30 dark:hover:shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_8px_48px_-4px_rgba(139,92,246,0.45),0_0_80px_-8px_rgba(192,132,252,0.35)] dark:hover:brightness-110 sm:min-w-[220px] sm:self-end"
               >
                 <span
                   className="pointer-events-none absolute inset-0 z-[1] -translate-x-full skew-x-[-12deg] bg-gradient-to-r from-transparent via-white/25 to-transparent opacity-0 transition-all duration-700 ease-out group-hover/submit:translate-x-full group-hover/submit:opacity-100 group-disabled/submit:opacity-0"

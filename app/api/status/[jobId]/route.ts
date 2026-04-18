@@ -26,8 +26,10 @@ export async function GET(_request: Request, context: Params) {
     stepCode: job.stepCode,
     skipTranslate: job.skipTranslate,
     whisperModel: job.whisperModel,
+    translateEngine: job.translateEngine,
     error: job.error,
     downloadPath: job.downloadPath,
+    downloadFilename: job.downloadFilename,
     logs: job.logs ?? [],
   });
 }

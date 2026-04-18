@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 
 import { TARGET_LANGUAGES } from "@/lib/lang";
 import {
+  normalizeTranslateEngineInput,
+  serverDefaultTranslateEngine,
+} from "@/lib/translate-models";
+import {
   normalizeWhisperModelInput,
   serverDefaultWhisperModel,
 } from "@/lib/whisper-models";
@@ -37,6 +41,10 @@ export async function POST(request: Request) {
       String(form.get("whisperModel") || ""),
       serverDefaultWhisperModel()
     );
+    const translateEngine = normalizeTranslateEngineInput(
+      String(form.get("translateEngine") || ""),
+      serverDefaultTranslateEngine()
+    );
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Video dosyası eksik" }, { status: 400 });
@@ -63,6 +71,7 @@ export async function POST(request: Request) {
       stepCode: "saving_video",
       progressHint: "1/5 · Dosya sunucuya yazılıyor…",
       whisperModel,
+      translateEngine,
     });
 
     const paths = getJobPaths(jobId);
@@ -81,7 +90,7 @@ export async function POST(request: Request) {
       progressHint: "Video hazır — birazdan ses ayıklanacak (genel ~%12)",
     });
 
-    void runPipeline(jobId, targetLang);
+    void runPipeline(jobId, targetLang, translateEngine);
 
     return NextResponse.json({
       jobId,

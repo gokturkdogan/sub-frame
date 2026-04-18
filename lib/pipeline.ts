@@ -23,6 +23,9 @@ import {
 } from "@/lib/lang";
 import { extractAudio, muxSoftSubtitles } from "@/workers/ffmpeg";
 import { transcribeTurkishToSrt } from "@/workers/whisper";
+import { buildSubframeVideoFilename } from "@/lib/output-filename";
+import { serverDefaultTranslateEngine } from "@/lib/translate-models";
+import { serverDefaultWhisperModel } from "@/lib/whisper-models";
 import { translateSrtFile } from "@/workers/translate";
 
 const TTL_MS = Number(process.env.JOB_TTL_MS) || 45 * 60 * 1000;
@@ -57,7 +60,11 @@ function startBoundedProgressPulse(
   return () => clearInterval(id);
 }
 
-export async function runPipeline(jobId: string, targetLang: string): Promise<void> {
+export async function runPipeline(
+  jobId: string,
+  targetLang: string,
+  translateEngine: string = serverDefaultTranslateEngine()
+): Promise<void> {
   const p = getJobPaths(jobId);
 
   const progress = (
@@ -87,6 +94,9 @@ export async function runPipeline(jobId: string, targetLang: string): Promise<vo
       "Video sırayla işlenir: ses ayıklama → konuşmayı yazıya dökme → (gerekirse) çeviri → videoya gömme."
     );
     logBullet(jobId, `Altyazı dili: ${langLabel} (${targetLang})`);
+    if (!turkishOnly) {
+      logBullet(jobId, `Çeviri motoru: ${translateEngine}`);
+    }
     logTech(jobId, `Geçici dosyalar: ${p.dir}`);
 
     progress(
@@ -143,7 +153,13 @@ export async function runPipeline(jobId: string, targetLang: string): Promise<vo
         "Metin çevriliyor",
         "4/5 · Satır satır çeviri (ilerleme aşağıda güncellenir)"
       );
-      await translateSrtFile(p.trSrt, p.translatedSrt, targetLang, jobId);
+      await translateSrtFile(
+        p.trSrt,
+        p.translatedSrt,
+        targetLang,
+        jobId,
+        translateEngine
+      );
     }
 
     progress(
@@ -177,8 +193,19 @@ export async function runPipeline(jobId: string, targetLang: string): Promise<vo
     }
 
     const downloadPath = `/api/download/${jobId}`;
+    const jobSnap = getJob(jobId);
+    const whisperModel =
+      jobSnap?.whisperModel?.trim() || serverDefaultWhisperModel();
+    const downloadFilename = buildSubframeVideoFilename({
+      jobId,
+      whisperModel,
+      targetLang,
+      translateEngine,
+      turkishOnly,
+    });
     logSection(jobId, "🎉", "İşlem tamamlandı");
     logOk(jobId, `Hazır video indirilebilir: ${downloadPath}`);
+    logBullet(jobId, `Önerilen dosya adı: ${downloadFilename}`);
     updateJob(jobId, {
       status: "completed",
       progress: 100,
@@ -186,6 +213,7 @@ export async function runPipeline(jobId: string, targetLang: string): Promise<vo
       stepCode: "completed",
       progressHint: "100% · İndirmeye hazır",
       downloadPath,
+      downloadFilename,
       completedAt: Date.now(),
     });
     scheduleJobDeletion(jobId, TTL_MS);

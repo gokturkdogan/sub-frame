@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
+  Languages,
   Loader2,
   Mic2,
   PartyPopper,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 
 import type { PipelineStepCode } from "@/lib/pipeline-steps";
+import { TRANSLATE_ENGINE_OPTIONS } from "@/lib/translate-models";
 import { WHISPER_MODEL_OPTIONS } from "@/lib/whisper-models";
 import { cn } from "@/lib/utils";
 
@@ -41,8 +43,10 @@ type StatusPayload = {
   skipTranslate?: boolean;
   error?: string;
   downloadPath?: string;
+  downloadFilename?: string;
   logs?: string[];
   whisperModel?: string;
+  translateEngine?: string;
 };
 
 export function ResultClient() {
@@ -213,20 +217,37 @@ export function ResultClient() {
                     ? "Bağlanıyor…"
                     : "İşlem adımları aşağıda güncellenir."}
             </CardDescription>
-            {data?.whisperModel ? (
+            {data?.whisperModel || data?.translateEngine ? (
               <p className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-1.5 text-xs text-foreground dark:bg-violet-500/10">
-                  <Mic2
-                    className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400"
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                  <span className="text-muted-foreground">Whisper modeli</span>
-                  <span className="font-mono text-[11px] font-medium text-foreground">
-                    {WHISPER_MODEL_OPTIONS.find((o) => o.value === data.whisperModel)
-                      ?.label ?? data.whisperModel}
+                {data.whisperModel ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-1.5 text-xs text-foreground dark:bg-violet-500/10">
+                    <Mic2
+                      className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
+                    <span className="text-muted-foreground">Whisper modeli</span>
+                    <span className="font-mono text-[11px] font-medium text-foreground">
+                      {WHISPER_MODEL_OPTIONS.find((o) => o.value === data.whisperModel)
+                        ?.label ?? data.whisperModel}
+                    </span>
                   </span>
-                </span>
+                ) : null}
+                {data.translateEngine && !data.skipTranslate ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/5 px-2.5 py-1.5 text-xs text-foreground dark:bg-fuchsia-500/10">
+                    <Languages
+                      className="size-3.5 shrink-0 text-fuchsia-600 dark:text-fuchsia-400"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
+                    <span className="text-muted-foreground">Çeviri motoru</span>
+                    <span className="font-mono text-[11px] font-medium text-foreground">
+                      {TRANSLATE_ENGINE_OPTIONS.find(
+                        (o) => o.value === data.translateEngine
+                      )?.label ?? data.translateEngine}
+                    </span>
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -343,7 +364,7 @@ export function ResultClient() {
           {done ? (
             <a
               href={downloadHref}
-              download
+              download={data?.downloadFilename ?? undefined}
               className={cn(
                 buttonVariants({ size: "lg" }),
                 "inline-flex items-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 font-semibold shadow-lg shadow-violet-500/25 hover:opacity-95 dark:shadow-violet-900/40"

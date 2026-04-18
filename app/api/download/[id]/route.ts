@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { Readable } from "stream";
 import { validate as validateUuid } from "uuid";
 
+import { getJob } from "@/lib/job-store";
 import { getJobPaths } from "@/lib/paths";
 
 export const runtime = "nodejs";
@@ -30,10 +31,15 @@ export async function GET(_request: Request, context: Params) {
   const nodeStream = createReadStream(paths.finalMp4);
   const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
+  const job = getJob(id);
+  const safeName =
+    job?.downloadFilename?.replace(/[/\\?%*:|"<>]/g, "-") ||
+    `altyazili-${id.slice(0, 8)}.mp4`;
+
   return new NextResponse(webStream, {
     headers: {
       "Content-Type": "video/mp4",
-      "Content-Disposition": `attachment; filename="altyazili-${id.slice(0, 8)}.mp4"`,
+      "Content-Disposition": `attachment; filename="${safeName}"`,
     },
   });
 }
