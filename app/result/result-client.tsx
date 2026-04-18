@@ -19,14 +19,17 @@ import {
 import { Progress, ProgressLabel } from "@/components/ui/progress";
 import {
   CheckCircle2,
+  ChevronDown,
   Download,
   Loader2,
+  Mic2,
   PartyPopper,
   Terminal,
   XCircle,
 } from "lucide-react";
 
 import type { PipelineStepCode } from "@/lib/pipeline-steps";
+import { WHISPER_MODEL_OPTIONS } from "@/lib/whisper-models";
 import { cn } from "@/lib/utils";
 
 type StatusPayload = {
@@ -39,6 +42,7 @@ type StatusPayload = {
   error?: string;
   downloadPath?: string;
   logs?: string[];
+  whisperModel?: string;
 };
 
 export function ResultClient() {
@@ -47,8 +51,14 @@ export function ResultClient() {
   const jobId = params.get("job");
 
   const [data, setData] = React.useState<StatusPayload | null>(null);
+  /** İşlem günlüğü accordion — varsayılan kapalı */
+  const [logsOpen, setLogsOpen] = React.useState(false);
   /** İş tamamlandıktan sonra /status 404 verse bile (TTL) başarı ekranını koru */
   const sawCompletedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    setLogsOpen(false);
+  }, [jobId]);
 
   React.useEffect(() => {
     if (!jobId) return;
@@ -203,6 +213,22 @@ export function ResultClient() {
                     ? "Bağlanıyor…"
                     : "İşlem adımları aşağıda güncellenir."}
             </CardDescription>
+            {data?.whisperModel ? (
+              <p className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-1.5 text-xs text-foreground dark:bg-violet-500/10">
+                  <Mic2
+                    className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                  <span className="text-muted-foreground">Whisper modeli</span>
+                  <span className="font-mono text-[11px] font-medium text-foreground">
+                    {WHISPER_MODEL_OPTIONS.find((o) => o.value === data.whisperModel)
+                      ?.label ?? data.whisperModel}
+                  </span>
+                </span>
+              </p>
+            ) : null}
           </div>
         </CardHeader>
 
@@ -270,17 +296,43 @@ export function ResultClient() {
           ) : null}
 
           {(data?.logs?.length ?? 0) > 0 ? (
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Terminal className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
-                İşlem günlüğü
-              </div>
-              <pre
-                className="max-h-80 overflow-auto overflow-x-auto rounded-xl border border-border/80 bg-muted/30 p-3 text-left text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground shadow-inner"
-                tabIndex={0}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setLogsOpen((o) => !o)}
+                aria-expanded={logsOpen}
+                className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 text-left transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/35 dark:bg-muted/15 dark:hover:bg-muted/30"
               >
-                {(data?.logs ?? []).join("\n")}
-              </pre>
+                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Terminal className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+                  <span className="text-foreground">İşlem günlüğü</span>
+                  <span className="rounded-full border border-border/60 bg-background/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {(data?.logs ?? []).length} satır
+                  </span>
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-out",
+                    logsOpen && "rotate-180"
+                  )}
+                  aria-hidden
+                />
+              </button>
+              <div
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none",
+                  logsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                )}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <pre
+                    className="mt-2 max-h-80 overflow-auto overflow-x-auto rounded-xl border border-border/80 bg-muted/30 p-3 text-left text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground shadow-inner"
+                    tabIndex={logsOpen ? 0 : -1}
+                  >
+                    {(data?.logs ?? []).join("\n")}
+                  </pre>
+                </div>
+              </div>
             </div>
           ) : null}
         </CardContent>

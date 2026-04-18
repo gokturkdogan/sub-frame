@@ -20,7 +20,8 @@ import {
   DEFAULT_WHISPER_MODEL,
   WHISPER_MODEL_OPTIONS,
 } from "@/lib/whisper-models";
-import { Sparkles, Upload } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Sparkles, Upload, X } from "lucide-react";
 
 export default function HomePage() {
   const router = useRouter();
@@ -29,11 +30,120 @@ export default function HomePage() {
   const [whisperModel, setWhisperModel] = React.useState(DEFAULT_WHISPER_MODEL);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [videoThumb, setVideoThumb] = React.useState<string | null>(null);
+  const [thumbPending, setThumbPending] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const videoObjectUrl = React.useMemo(() => {
+    if (!file) return null;
+    return URL.createObjectURL(file);
+  }, [file]);
+
+  React.useEffect(() => {
+    return () => {
+      if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
+    };
+  }, [videoObjectUrl]);
+
+  React.useEffect(() => {
+    if (!file || !videoObjectUrl) {
+      setVideoThumb(null);
+      setThumbPending(false);
+      return;
+    }
+
+    setVideoThumb(null);
+    setThumbPending(true);
+
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.src = videoObjectUrl;
+
+    let cancelled = false;
+
+    const detach = () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
+      video.removeAttribute("src");
+      video.load();
+    };
+
+    const onError = () => {
+      if (cancelled) return;
+      setVideoThumb(null);
+      setThumbPending(false);
+      detach();
+    };
+
+    const onLoadedMetadata = () => {
+      if (cancelled) return;
+      const d = video.duration;
+      // ~15. saniye: uzun videolarda anlamlı kare; kısa clip’te sürenin sonuna yakın (seek taşmasın).
+      const t =
+        Number.isFinite(d) && d > 0
+          ? Math.min(15, Math.max(0.05, d - 0.05))
+          : 0.1;
+      video.currentTime = t;
+    };
+
+    const onSeeked = () => {
+      if (cancelled) return;
+      try {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        if (!vw || !vh) {
+          setThumbPending(false);
+          detach();
+          return;
+        }
+        const maxW = 720;
+        const scale = Math.min(1, maxW / vw);
+        const cw = Math.round(vw * scale);
+        const ch = Math.round(vh * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          setThumbPending(false);
+          detach();
+          return;
+        }
+        ctx.drawImage(video, 0, 0, cw, ch);
+        setVideoThumb(canvas.toDataURL("image/jpeg", 0.82));
+      } catch {
+        setVideoThumb(null);
+      } finally {
+        setThumbPending(false);
+        detach();
+      }
+    };
+
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("error", onError);
+    video.load();
+
+    return () => {
+      cancelled = true;
+      detach();
+    };
+  }, [file, videoObjectUrl]);
 
   const onPick = (f: File | null) => {
     setError(null);
     setFile(f);
+  };
+
+  const onClearFile = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setError(null);
+    setFile(null);
+    if (inputRef.current) inputRef.current.value = "";
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -64,8 +174,8 @@ export default function HomePage() {
   };
 
   return (
-    <AppShell mainClassName="justify-center">
-      <div className="relative mb-10 space-y-6 text-center sm:mb-12 sm:text-left">
+    <AppShell mainClassName="justify-start pt-11 pb-8 sm:pt-14 sm:pb-10">
+      <div className="relative mb-6 space-y-5 text-center sm:mb-8 sm:space-y-6 sm:text-left">
         <div
           className="pointer-events-none absolute -left-24 top-0 size-72 rounded-full bg-gradient-to-tr from-violet-500/25 via-fuchsia-500/15 to-transparent blur-3xl dark:from-violet-600/20 dark:via-fuchsia-500/10 animate-hero-glow"
           aria-hidden
@@ -143,22 +253,70 @@ export default function HomePage() {
                   if (f) onPick(f);
                 }}
                 onClick={() => inputRef.current?.click()}
-                className="group/dz relative flex w-full cursor-pointer flex-col items-center justify-center gap-4 overflow-hidden rounded-2xl border-2 border-dashed border-violet-400/45 bg-gradient-to-b from-muted/50 to-muted/15 px-6 py-16 text-center text-sm text-muted-foreground shadow-inner transition duration-500 hover:-translate-y-0.5 hover:border-fuchsia-400/55 hover:from-violet-500/10 hover:to-fuchsia-500/5 hover:shadow-[0_0_48px_-12px_rgba(139,92,246,0.45)] dark:border-violet-500/35 dark:from-muted/25 dark:to-muted/5 dark:hover:border-fuchsia-400/40"
+                className={cn(
+                  "group/dz relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-violet-400/45 bg-gradient-to-b from-muted/50 to-muted/15 text-muted-foreground shadow-inner transition duration-500 hover:-translate-y-0.5 hover:border-fuchsia-400/55 hover:from-violet-500/10 hover:to-fuchsia-500/5 hover:shadow-[0_0_48px_-12px_rgba(139,92,246,0.45)] dark:border-violet-500/35 dark:from-muted/25 dark:to-muted/5 dark:hover:border-fuchsia-400/40",
+                  file
+                    ? "gap-0 px-0 py-0"
+                    : "gap-4 px-6 py-16 text-center text-sm",
+                )}
               >
                 <span className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,oklch(0.72_0.19_280/0.12),transparent_55%)] opacity-0 transition duration-500 group-hover/dz:opacity-100" />
-                <span className="relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/25 to-fuchsia-500/15 text-violet-600 shadow-lg shadow-violet-500/20 ring-2 ring-violet-400/20 transition duration-500 group-hover/dz:scale-110 group-hover/dz:shadow-xl group-hover/dz:shadow-violet-500/30 dark:text-violet-300 dark:ring-violet-400/25">
-                  <Upload className="size-8" strokeWidth={1.5} />
-                </span>
-                <span className="relative max-w-sm">
-                  {file ? (
-                    <span className="font-semibold text-foreground">{file.name}</span>
-                  ) : (
-                    <>
-                      <span className="font-semibold text-foreground">Sürükleyin veya tıklayın</span>
+                {file ? (
+                  <div className="relative flex w-full flex-col">
+                    <div className="relative aspect-video w-full overflow-hidden bg-black/30">
+                      {thumbPending && !videoThumb ? (
+                        <div
+                          className="absolute inset-0 flex items-center justify-center bg-muted/50"
+                          aria-busy
+                        >
+                          <span className="text-xs text-muted-foreground">
+                            Önizleme hazırlanıyor…
+                          </span>
+                        </div>
+                      ) : videoThumb ? (
+                        <img
+                          src={videoThumb}
+                          alt=""
+                          className="absolute inset-0 size-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="absolute inset-0 bg-muted/40"
+                          aria-hidden
+                        />
+                      )}
+                      <div className="absolute right-2 top-2 z-10">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="size-9 rounded-full border border-border/60 bg-background/85 shadow-md backdrop-blur-sm hover:bg-background"
+                          onClick={onClearFile}
+                          aria-label="Videoyu kaldır"
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="border-t border-border/50 bg-muted/20 px-4 py-3 text-center text-sm sm:px-6">
+                      <span className="font-semibold text-foreground break-all">
+                        {file.name}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <span className="relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/25 to-fuchsia-500/15 text-violet-600 shadow-lg shadow-violet-500/20 ring-2 ring-violet-400/20 transition duration-500 group-hover/dz:scale-110 group-hover/dz:shadow-xl group-hover/dz:shadow-violet-500/30 dark:text-violet-300 dark:ring-violet-400/25">
+                      <Upload className="size-8" strokeWidth={1.5} />
+                    </span>
+                    <span className="relative max-w-sm">
+                      <span className="font-semibold text-foreground">
+                        Sürükleyin veya tıklayın
+                      </span>
                       <span className="text-muted-foreground"> — MP4, MOV, MKV…</span>
-                    </>
-                  )}
-                </span>
+                    </span>
+                  </>
+                )}
               </button>
               <input
                 ref={inputRef}

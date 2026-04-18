@@ -25,6 +25,7 @@ export async function GET(_request: Request, context: Params) {
     progressHint: job.progressHint,
     stepCode: job.stepCode,
     skipTranslate: job.skipTranslate,
+    whisperModel: job.whisperModel,
     error: job.error,
     downloadPath: job.downloadPath,
     logs: job.logs ?? [],

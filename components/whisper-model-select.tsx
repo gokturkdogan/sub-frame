@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 
+import { fixedListboxStyle } from "@/lib/dropdown-position";
 import { Label } from "@/components/ui/label";
 import type { WhisperModelOption } from "@/lib/whisper-models";
 import { cn } from "@/lib/utils";
@@ -46,14 +47,7 @@ export function WhisperModelSelect({
   const updateMenuPosition = React.useCallback(() => {
     const el = triggerRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setMenuStyle({
-      position: "fixed",
-      top: rect.bottom + 6,
-      left: rect.left,
-      width: rect.width,
-      zIndex: 200,
-    });
+    setMenuStyle(fixedListboxStyle(el, 320));
   }, []);
 
   React.useLayoutEffect(() => {
@@ -153,16 +147,7 @@ export function WhisperModelSelect({
               return;
             }
             const el = triggerRef.current;
-            if (el) {
-              const r = el.getBoundingClientRect();
-              setMenuStyle({
-                position: "fixed",
-                top: r.bottom + 6,
-                left: r.left,
-                width: r.width,
-                zIndex: 200,
-              });
-            }
+            if (el) setMenuStyle(fixedListboxStyle(el, 320));
             setOpen(true);
           }}
           className={cn(

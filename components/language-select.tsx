@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 
+import { fixedListboxStyle } from "@/lib/dropdown-position";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { Check, ChevronDown } from "lucide-react";
@@ -49,14 +50,7 @@ export function LanguageSelect({
   const updateMenuPosition = React.useCallback(() => {
     const el = triggerRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setMenuStyle({
-      position: "fixed",
-      top: rect.bottom + 6,
-      left: rect.left,
-      width: rect.width,
-      zIndex: 200,
-    });
+    setMenuStyle(fixedListboxStyle(el, 280));
   }, []);
 
   React.useLayoutEffect(() => {
@@ -150,16 +144,7 @@ export function LanguageSelect({
               return;
             }
             const el = triggerRef.current;
-            if (el) {
-              const r = el.getBoundingClientRect();
-              setMenuStyle({
-                position: "fixed",
-                top: r.bottom + 6,
-                left: r.left,
-                width: r.width,
-                zIndex: 200,
-              });
-            }
+            if (el) setMenuStyle(fixedListboxStyle(el, 280));
             setOpen(true);
           }}
           className={cn(

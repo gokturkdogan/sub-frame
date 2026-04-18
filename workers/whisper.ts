@@ -372,6 +372,9 @@ export async function transcribeTurkishToSrt(
       env: {
         ...process.env,
         PYTHONUNBUFFERED: "1",
+        /** Windows cp125x: Türkçe segment print() UnicodeEncodeError vermesin */
+        PYTHONUTF8: "1",
+        PYTHONIOENCODING: "utf-8",
         PATH: mergedPath,
         Path: mergedPath,
       },
@@ -622,7 +625,7 @@ export async function transcribeTurkishToSrt(
     await fs.access(generated);
   } catch {
     throw new Error(
-      `Whisper çıktı dosyası oluşmadı (${generated}). Python/Whisper içinde ffmpeg görünmüyor olabilir. FFMPEG_PATH ayarlıysa yolun process env'e geçtiğini kontrol edin.`
+      `Whisper çıktı dosyası oluşmadı (${generated}). Olası nedenler: (1) ffmpeg PATH’te değil — FFMPEG_PATH deneyin. (2) Windows’ta UnicodeEncodeError / charmap — konsol UTF-8 değil; uygulama whisper için PYTHONUTF8=1 ayarlar, güncel sürümle yeniden deneyin veya terminalde chcp 65001.`
     );
   }
   await fs.rename(generated, outSrtPath);
